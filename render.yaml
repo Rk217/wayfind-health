@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: wayfind-health
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm run start
+    envVars: []
