@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Wayfind Health</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <div class="logo">
+      <svg viewBox="0 0 40 26" fill="none"><path d="M0 13 H10 L14 4 L20 22 L24 13 H40" stroke="#e8a33d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Wayfind Health <span style="color:var(--ink-soft); font-weight:500; font-size:0.9rem; margin-left:6px;">/ admin</span>
+    </div>
+    <nav class="nav-links"><a href="/index.html">View public site</a></nav>
+    <button class="btn btn-ghost btn-small" id="logoutBtn" style="display:none;">Log out</button>
+  </div>
+</header>
+
+<div id="loginView" class="admin-login">
+  <div class="logo" style="color:var(--teal);"><svg viewBox="0 0 40 26" fill="none"><path d="M0 13 H10 L14 4 L20 22 L24 13 H40" stroke="#e8a33d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Wayfind Health</div>
+  <p class="sub">Staff sign-in</p>
+  <div class="field"><label>Username</label><input id="loginUser" placeholder="admin"></div>
+  <div class="field"><label>Password</label><input id="loginPass" type="password" placeholder="••••••••"></div>
+  <button class="btn btn-primary" id="loginBtn">Sign in</button>
+  <div class="admin-error" id="loginError"></div>
+  <div class="admin-hint">First time here? Default login is <b>admin</b> / <b>admin123</b> — change the password from Settings right after signing in.</div>
+</div>
+
+<div id="dashView" class="admin-shell" style="display:none;">
+  <div class="admin-topbar">
+    <div>
+      <div class="eyebrow">Signed in as <span id="whoAmI" class="mono">—</span></div>
+      <h2 style="font-size:1.6rem;">Staff dashboard</h2>
+    </div>
+  </div>
+
+  <div class="admin-tabs">
+    <button class="admin-tab active" data-tab="appointments">Appointments</button>
+    <button class="admin-tab" data-tab="doctors">Doctors</button>
+    <button class="admin-tab" data-tab="settings">Settings</button>
+  </div>
+
+  <div id="tab-appointments" class="admin-panel">
+    <h3>All appointments</h3>
+    <div class="sub">Every booking made on the public site, read live from the database.</div>
+    <div id="apptTableWrap"><div class="empty-note">Loading…</div></div>
+  </div>
+
+  <div id="tab-doctors" class="admin-panel" style="display:none;">
+    <h3>Doctors</h3>
+    <div class="sub">Add, edit, or remove doctors. New doctors get availability generated automatically.</div>
+    <div class="add-doctor-form">
+      <div><label>Name</label><input id="d-name" placeholder="Dr. Alex Ray"></div>
+      <div><label>Specialty</label><input id="d-spec" placeholder="Cardiology"></div>
+      <div><label>Rating</label><input id="d-rating" placeholder="4.8" inputmode="decimal"></div>
+      <div><label>Years</label><input id="d-years" placeholder="10" inputmode="numeric"></div>
+      <div><label>Color</label><input id="d-color" placeholder="#0f3d3e"></div>
+      <button class="btn btn-amber" id="addDoctorBtn">Add doctor</button>
+    </div>
+    <div id="doctorTableWrap"><div class="empty-note">Loading…</div></div>
+  </div>
+
+  <div id="tab-settings" class="admin-panel" style="display:none;">
+    <h3>Change admin password</h3>
+    <div class="sub">Do this now if you're still on the default password.</div>
+    <div class="field" style="max-width:320px;"><label>New password</label><input id="newPass" type="password"></div>
+    <button class="btn btn-primary" id="changePassBtn" style="margin-top:10px;">Update password</button>
+    <div class="admin-error" id="passMsg"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+let CURRENT_DOCTORS = [];
+
+function showToast(msg){
+  const toast = $("#toast");
+  toast.textContent = msg;
+  toast.classList.add("show");
+  clearTimeout(window._t);
+  window._t = setTimeout(()=> toast.classList.remove("show"), 3000);
+}
+
+async function checkSession(){
+  const res = await fetch("/api/admin/me");
+  if(res.ok){
+    const data = await res.json();
+    $("#loginView").style.display = "none";
+    $("#dashView").style.display = "block";
+    $("#logoutBtn").style.display = "inline-flex";
+    $("#whoAmI").textContent = data.username;
+    loadAppointments();
+    loadDoctors();
+  } else {
+    $("#loginView").style.display = "block";
+    $("#dashView").style.display = "none";
+    $("#logoutBtn").style.display = "none";
+  }
+}
+
+$("#loginBtn").onclick = async ()=>{
+  const username = $("#loginUser").value.trim();
+  const password = $("#loginPass").value;
+  const res = await fetch("/api/admin/login", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username, password})
+  });
+  if(res.ok){ $("#loginError").textContent = ""; checkSession(); }
+  else { const d = await res.json(); $("#loginError").textContent = d.error || "Login failed."; }
+};
+
+$("#logoutBtn").onclick = async ()=>{
+  await fetch("/api/admin/logout", {method:"POST"});
+  checkSession();
+};
+
+document.querySelectorAll(".admin-tab").forEach(tab=>{
+  tab.onclick = ()=>{
+    document.querySelectorAll(".admin-tab").forEach(t=>t.classList.remove("active"));
+    tab.classList.add("active");
+    ["appointments","doctors","settings"].forEach(name=>{
+      document.getElementById("tab-"+name).style.display = (name===tab.dataset.tab) ? "block" : "none";
+    });
+  };
+});
+
+/* ---------------- APPOINTMENTS ---------------- */
+async function loadAppointments(){
+  const res = await fetch("/api/admin/appointments");
+  const rows = await res.json();
+  const wrap = $("#apptTableWrap");
+  if(!rows.length){ wrap.innerHTML = `<div class="empty-note">No appointments booked yet.</div>`; return; }
+  wrap.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Patient</th><th>Doctor</th><th>When</th><th>Contact</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`
+          <tr>
+            <td><b>${r.patient_name}</b><br><span style="color:var(--ink-soft); font-size:0.8rem;">${r.reason || "—"}</span></td>
+            <td>${r.doctor_name}<br><span style="color:var(--ink-soft); font-size:0.8rem;">${r.doctor_spec}</span></td>
+            <td class="mono">${r.day} ${r.time}</td>
+            <td>${r.patient_phone}${r.patient_email? "<br>"+r.patient_email : ""}</td>
+            <td><span class="status-pill status-${r.status}">${r.status}</span></td>
+            <td>${r.status==="confirmed" ? `<button class="icon-btn danger" data-id="${r.id}">Cancel</button>` : ""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+  wrap.querySelectorAll("button[data-id]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      await fetch(`/api/admin/appointments/${btn.dataset.id}`, {method:"DELETE"});
+      showToast("Appointment cancelled.");
+      loadAppointments();
+    };
+  });
+}
+
+/* ---------------- DOCTORS ---------------- */
+async function loadDoctors(){
+  const res = await fetch("/api/admin/doctors");
+  CURRENT_DOCTORS = await res.json();
+  const wrap = $("#doctorTableWrap");
+  if(!CURRENT_DOCTORS.length){ wrap.innerHTML = `<div class="empty-note">No doctors yet — add one above.</div>`; return; }
+  wrap.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>Name</th><th>Specialty</th><th>Rating</th><th>Years</th><th></th></tr></thead>
+      <tbody>
+        ${CURRENT_DOCTORS.map(d=>`
+          <tr data-row="${d.id}">
+            <td><input value="${d.name}" data-field="name" style="border:none; background:transparent; width:100%; font-family:inherit;"></td>
+            <td><input value="${d.spec}" data-field="spec" style="border:none; background:transparent; width:100%; font-family:inherit;"></td>
+            <td><input value="${d.rating}" data-field="rating" style="border:none; background:transparent; width:60px; font-family:inherit;"></td>
+            <td><input value="${d.years}" data-field="years" style="border:none; background:transparent; width:50px; font-family:inherit;"></td>
+            <td class="row-actions">
+              <button class="icon-btn" data-save="${d.id}">Save</button>
+              <button class="icon-btn danger" data-del="${d.id}">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+  wrap.querySelectorAll("button[data-save]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const row = wrap.querySelector(`tr[data-row="${btn.dataset.save}"]`);
+      const get = f => row.querySelector(`[data-field="${f}"]`).value;
+      const doc = CURRENT_DOCTORS.find(d=>d.id==btn.dataset.save);
+      await fetch(`/api/admin/doctors/${btn.dataset.save}`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name:get("name"), spec:get("spec"), rating:get("rating"), years:get("years"), color: doc.color })
+      });
+      showToast("Doctor updated.");
+      loadDoctors();
+    };
+  });
+  wrap.querySelectorAll("button[data-del]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      if(!confirm("Remove this doctor? Their upcoming slots will be removed too.")) return;
+      await fetch(`/api/admin/doctors/${btn.dataset.del}`, {method:"DELETE"});
+      showToast("Doctor removed.");
+      loadDoctors();
+    };
+  });
+}
+
+$("#addDoctorBtn").onclick = async ()=>{
+  const name = $("#d-name").value.trim();
+  const spec = $("#d-spec").value.trim();
+  const rating = $("#d-rating").value.trim();
+  const years = $("#d-years").value.trim();
+  const color = $("#d-color").value.trim();
+  if(!name || !spec){ showToast("Name and specialty are required."); return; }
+  await fetch("/api/admin/doctors", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ name, spec, rating, years, color })
+  });
+  ["d-name","d-spec","d-rating","d-years","d-color"].forEach(id => $("#"+id).value = "");
+  showToast("Doctor added.");
+  loadDoctors();
+};
+
+/* ---------------- SETTINGS ---------------- */
+$("#changePassBtn").onclick = async ()=>{
+  const newPassword = $("#newPass").value;
+  const res = await fetch("/api/admin/change-password", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ newPassword })
+  });
+  const data = await res.json();
+  $("#passMsg").style.color = res.ok ? "var(--teal-light)" : "var(--coral)";
+  $("#passMsg").textContent = res.ok ? "Password updated." : (data.error || "Could not update password.");
+  if(res.ok) $("#newPass").value = "";
+};
+
+checkSession();
+</script>
+</body>
+</html>

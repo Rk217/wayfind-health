@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wayfind Health — Book care that fits your day</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <div class="logo">
+      <svg viewBox="0 0 40 26" fill="none"><path d="M0 13 H10 L14 4 L20 22 L24 13 H40" stroke="#e8a33d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Wayfind Health
+    </div>
+    <nav class="nav-links">
+      <a href="#doctors">Find a doctor</a>
+      <a href="#specialties">Specialties</a>
+      <a href="#appointments">My appointments</a>
+      <a href="/admin.html">Admin</a>
+    </nav>
+    <button class="btn btn-primary" onclick="document.getElementById('doctors').scrollIntoView({behavior:'smooth'})">Book now</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow"><span class="dot"></span> Live availability, straight from the database</div>
+      <h1>Care that finds a <em>time that suits you</em>, not the other way round.</h1>
+      <p class="lead">Search by specialty, compare real availability, and confirm your visit in under a minute — no phone tag, no hold music.</p>
+
+      <div class="search-card">
+        <div class="field">
+          <label for="f-spec">Specialty</label>
+          <select id="f-spec">
+            <option value="">Any specialty</option>
+          </select>
+        </div>
+        <button class="btn btn-amber" onclick="applyHeroFilter()">Search doctors</button>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat"><b id="statDoctors">—</b><span>Doctors online</span></div>
+        <div class="stat"><b id="statBooked">—</b><span>Appointments booked</span></div>
+        <div class="stat"><b>4.8/5</b><span>Patient rating</span></div>
+      </div>
+    </div>
+
+    <div class="ticker-board">
+      <div class="ticker-head">
+        <span class="title">Next available &middot; live board</span>
+        <span class="live"><span class="dot"></span> LIVE</span>
+      </div>
+      <div class="ticker-viewport">
+        <div class="ticker-track" id="tickerTrack"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="specialties">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Browse by need</div>
+      <h2>What brings you in today?</h2>
+      <p>Pick a specialty to filter the directory below, or leave it open to see everyone with a slot this week.</p>
+    </div>
+    <div class="spec-row" id="specRow"></div>
+  </div>
+</section>
+
+<section id="doctors">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Directory</div>
+      <h2>Doctors with real, current openings</h2>
+      <p>Every slot below is read live from the database. Book directly — no confirmation call needed.</p>
+    </div>
+    <div class="doctor-grid" id="doctorGrid"><div class="empty-note">Loading doctors…</div></div>
+  </div>
+</section>
+
+<section id="appointments">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Your visits</div>
+      <h2>My appointments</h2>
+      <p>Anything you book in this browser session shows up here. Staff can see every booking (from every patient) in the admin dashboard.</p>
+    </div>
+    <div class="appt-list" id="apptList"></div>
+  </div>
+</section>
+
+<footer id="contact">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="logo"><svg viewBox="0 0 40 26" fill="none"><path d="M0 13 H10 L14 4 L20 22 L24 13 H40" stroke="#e8a33d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Wayfind Health</div>
+        <p>A booking layer for clinics that would rather practice medicine than manage a phone queue.</p>
+        <div class="emergency">In a medical emergency, call your local emergency number immediately — this site is for scheduling routine and follow-up care only.</div>
+      </div>
+      <div>
+        <h3>Company</h3>
+        <ul><li><a href="#doctors">Find a doctor</a></li><li><a href="#specialties">Specialties</a></li><li><a href="/admin.html">Admin dashboard</a></li></ul>
+      </div>
+      <div>
+        <h3>Support</h3>
+        <ul><li><a href="#">Help center</a></li><li><a href="#">Privacy policy</a></li><li><a href="#">Terms</a></li></ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&copy; 2026 Wayfind Health. Demo product — no real medical data.</span>
+      <span>Backed by a real SQLite database.</span>
+    </div>
+  </div>
+</footer>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DAY_LABEL = key => new Date(key + "T00:00:00").toLocaleDateString(undefined,{weekday:"short"});
+const DAY_NUM = key => new Date(key + "T00:00:00").getDate();
+const DAY_LONG = key => new Date(key + "T00:00:00").toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"});
+function initials(name){ return name.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
+
+let DOCTORS = [];
+let activeSpec = "";
+const sessionAppointments = []; // this browser tab's bookings, for the "My appointments" panel
+
+async function loadDoctors(){
+  const res = await fetch("/api/doctors");
+  DOCTORS = await res.json();
+  document.getElementById("statDoctors").textContent = DOCTORS.length;
+  const specs = [...new Set(DOCTORS.map(d=>d.spec))];
+  const specSelect = document.getElementById("f-spec");
+  specSelect.innerHTML = `<option value="">Any specialty</option>` + specs.map(s=>`<option>${s}</option>`).join("");
+  renderSpecs(specs);
+  renderDoctors();
+  renderTicker();
+}
+
+function renderSpecs(specs){
+  const specRow = document.getElementById("specRow");
+  specRow.innerHTML = "";
+  const allChip = document.createElement("button");
+  allChip.className = "spec-chip" + (activeSpec===""?" active":"");
+  allChip.textContent = "All specialties";
+  allChip.onclick = ()=>{ activeSpec=""; renderSpecs(specs); renderDoctors(); };
+  specRow.appendChild(allChip);
+  specs.forEach(s=>{
+    const chip = document.createElement("button");
+    chip.className = "spec-chip" + (activeSpec===s?" active":"");
+    chip.textContent = s;
+    chip.onclick = ()=>{ activeSpec=s; renderSpecs(specs); renderDoctors(); };
+    specRow.appendChild(chip);
+  });
+}
+
+function applyHeroFilter(){
+  activeSpec = document.getElementById("f-spec").value;
+  renderDoctors();
+  document.getElementById("doctors").scrollIntoView({behavior:"smooth"});
+}
+
+function renderDoctors(){
+  const grid = document.getElementById("doctorGrid");
+  const list = DOCTORS.filter(d => !activeSpec || d.spec === activeSpec);
+  if(!list.length){ grid.innerHTML = `<div class="empty-note">No doctors match that filter right now.</div>`; return; }
+  grid.innerHTML = list.map(doc => `
+    <div class="doctor-card">
+      <div class="doctor-top">
+        <div class="avatar" style="background:${doc.color}">${initials(doc.name)}</div>
+        <div>
+          <div class="doctor-name">${doc.name}</div>
+          <div class="doctor-spec">${doc.spec} &middot; ${doc.years} yrs</div>
+          <div class="rating">★ ${Number(doc.rating).toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="doctor-meta">
+        <span>Next opening</span>
+        <span class="next-slot">${doc.nextSlot ? DAY_LABEL(doc.nextSlot.day)+" "+doc.nextSlot.time : "None this week"}</span>
+      </div>
+      <button class="btn btn-primary" data-id="${doc.id}" ${doc.nextSlot? "" : "disabled style='opacity:.5'"}>View & book</button>
+    </div>
+  `).join("");
+  grid.querySelectorAll("button[data-id]").forEach(btn=> btn.onclick = ()=> openBooking(+btn.dataset.id));
+}
+
+function renderTicker(){
+  const rows = DOCTORS.filter(d=>d.nextSlot).sort((a,b)=> (a.nextSlot.day+a.nextSlot.time).localeCompare(b.nextSlot.day+b.nextSlot.time));
+  const html = rows.map(d => `
+    <div class="ticker-row" data-id="${d.id}">
+      <span class="time">${DAY_LABEL(d.nextSlot.day)} ${d.nextSlot.time}</span>
+      <span class="name">${d.name}</span>
+      <span class="spec">${d.spec}</span>
+      <span class="go">BOOK →</span>
+    </div>
+  `).join("");
+  document.getElementById("tickerTrack").innerHTML = html + html;
+  document.querySelectorAll(".ticker-row").forEach(row=>{
+    row.style.cursor = "pointer";
+    row.onclick = ()=> openBooking(+row.dataset.id);
+  });
+}
+
+/* ---------------- BOOKING MODAL ---------------- */
+const overlay = document.getElementById("overlay");
+const modal = document.getElementById("modal");
+let bookingState = {};
+
+async function openBooking(doctorId){
+  const doc = DOCTORS.find(d=>d.id===doctorId);
+  const res = await fetch(`/api/doctors/${doctorId}/availability`);
+  const avail = await res.json();
+  const firstDay = avail.days.find(day => (avail.availability[day]||[]).length) || avail.days[0];
+  bookingState = { doctorId, doc, avail, day: firstDay, time: null, step: 1 };
+  renderModal();
+  overlay.classList.add("open");
+}
+function closeBooking(){ overlay.classList.remove("open"); }
+overlay.addEventListener("click", e=>{ if(e.target===overlay) closeBooking(); });
+
+function renderModal(){
+  const { doc, avail, step } = bookingState;
+  const stepsDots = [1,2,3].map(n=>`<div class="step-dot ${n<=step?'active':''}"></div>`).join("");
+
+  if(step===1){
+    const daysHtml = avail.days.map(day=>{
+      const has = (avail.availability[day]||[]).length>0;
+      return `<button class="date-chip ${day===bookingState.day?'active':''}" ${has? "":"disabled style='opacity:.4'"} data-day="${day}">${DAY_LABEL(day)}<b>${DAY_NUM(day)}</b></button>`;
+    }).join("");
+    const times = avail.availability[bookingState.day] || [];
+    const timesHtml = avail.timeSlots.map(t=>{
+      const ok = times.includes(t);
+      return `<button class="time-chip ${bookingState.time===t?'active':''}" ${ok? "":"disabled"} data-time="${t}">${t}</button>`;
+    }).join("");
+
+    modal.innerHTML = `
+      <button class="modal-close" onclick="closeBooking()">✕</button>
+      <div class="steps">${stepsDots}</div>
+      <h3>Pick a date & time</h3>
+      <div class="sub">Choose from ${doc.name}'s live availability.</div>
+      <div class="modal-doc">
+        <div class="avatar" style="background:${doc.color}; width:44px; height:44px; font-size:1rem;">${initials(doc.name)}</div>
+        <div><div class="doctor-name">${doc.name}</div><div class="doctor-spec">${doc.spec}</div></div>
+      </div>
+      <div class="date-row">${daysHtml}</div>
+      <div class="time-grid">${timesHtml}</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeBooking()">Cancel</button>
+        <button class="btn btn-primary" id="toStep2" ${bookingState.time? "":"disabled style='opacity:.5'"}>Continue</button>
+      </div>
+    `;
+    modal.querySelectorAll(".date-chip").forEach(chip=>{
+      chip.onclick = ()=>{ bookingState.day = chip.dataset.day; bookingState.time = null; renderModal(); };
+    });
+    modal.querySelectorAll(".time-chip").forEach(chip=>{
+      chip.onclick = ()=>{ bookingState.time = chip.dataset.time; renderModal(); };
+    });
+    const cont = document.getElementById("toStep2");
+    if(cont) cont.onclick = ()=>{ bookingState.step=2; renderModal(); };
+  }
+
+  else if(step===2){
+    modal.innerHTML = `
+      <button class="modal-close" onclick="closeBooking()">✕</button>
+      <div class="steps">${stepsDots}</div>
+      <h3>Your details</h3>
+      <div class="sub">We'll only use this to send your confirmation.</div>
+      <div class="form-grid">
+        <div class="full"><label>Full name</label><input id="p-name" placeholder="Jordan Alvarez"></div>
+        <div><label>Phone</label><input id="p-phone" placeholder="(+91) 98xxxxxxx"></div>
+        <div><label>Email</label><input id="p-email" placeholder="you@email.com"></div>
+        <div class="full"><label>Reason for visit</label><textarea id="p-reason" rows="3" placeholder="Briefly describe what's going on"></textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="bookingState.step=1; renderModal();">Back</button>
+        <button class="btn btn-primary" id="toStep3">Review & confirm</button>
+      </div>
+    `;
+    document.getElementById("toStep3").onclick = ()=>{
+      const name = document.getElementById("p-name").value.trim();
+      const phone = document.getElementById("p-phone").value.trim();
+      const email = document.getElementById("p-email").value.trim();
+      const reason = document.getElementById("p-reason").value.trim();
+      if(!name || !phone){ showToast("Please add at least your name and phone number."); return; }
+      bookingState.patient = {name, phone, email, reason};
+      bookingState.step = 3;
+      renderModal();
+    };
+  }
+
+  else if(step===3){
+    const p = bookingState.patient;
+    modal.innerHTML = `
+      <button class="modal-close" onclick="closeBooking()">✕</button>
+      <div class="steps">${stepsDots}</div>
+      <h3>Confirm your appointment</h3>
+      <div class="sub">Double-check the details below.</div>
+      <div class="summary-row"><span>Doctor</span><b>${doc.name}</b></div>
+      <div class="summary-row"><span>Specialty</span><b>${doc.spec}</b></div>
+      <div class="summary-row"><span>Date</span><b>${DAY_LONG(bookingState.day)}</b></div>
+      <div class="summary-row"><span>Time</span><b>${bookingState.time}</b></div>
+      <div class="summary-row"><span>Patient</span><b>${p.name}</b></div>
+      <div class="summary-row"><span>Contact</span><b>${p.phone}</b></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="bookingState.step=2; renderModal();">Back</button>
+        <button class="btn btn-amber" id="confirmBtn">Confirm booking</button>
+      </div>
+    `;
+    document.getElementById("confirmBtn").onclick = confirmBooking;
+  }
+}
+
+async function confirmBooking(){
+  const { doctorId, doc, day, time, patient } = bookingState;
+  const res = await fetch("/api/book", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ doctorId, day, time, patient })
+  });
+  const result = await res.json();
+  if(!res.ok){ showToast(result.error || "That slot was just taken — pick another."); bookingState.step=1; renderModal(); return; }
+
+  sessionAppointments.unshift({ id: result.appointment.id, doc, day, time });
+  modal.innerHTML = `
+    <button class="modal-close" onclick="closeBooking()">✕</button>
+    <div class="confirm-check">✓</div>
+    <h3 style="text-align:center;">You're booked!</h3>
+    <div class="sub" style="text-align:center;">Saved to the database — staff can see this in the admin dashboard.</div>
+    <div class="summary-row"><span>Doctor</span><b>${doc.name}</b></div>
+    <div class="summary-row"><span>Date</span><b>${DAY_LONG(day)}</b></div>
+    <div class="summary-row"><span>Time</span><b>${time}</b></div>
+    <div class="modal-actions" style="justify-content:center; margin-top:20px;">
+      <button class="btn btn-primary" onclick="closeBooking()">Done</button>
+    </div>
+  `;
+  await loadDoctors();
+  renderAppointments();
+  showToast(`Booked with ${doc.name} — ${DAY_LABEL(day)} ${time}`);
+}
+
+function renderAppointments(){
+  const list = document.getElementById("apptList");
+  if(!sessionAppointments.length){
+    list.innerHTML = `<div class="appt-empty">No appointments yet. Book one above and it'll show up here.</div>`;
+    return;
+  }
+  list.innerHTML = sessionAppointments.map(a => `
+    <div class="appt-card">
+      <div class="avatar" style="background:${a.doc.color}; width:44px; height:44px; font-size:1rem;">${initials(a.doc.name)}</div>
+      <div class="grow">
+        <div class="doctor-name">${a.doc.name}</div>
+        <div class="doctor-spec">${a.doc.spec}</div>
+      </div>
+      <span class="pill">${DAY_LABEL(a.day)} ${DAY_NUM(a.day)} &middot; ${a.time}</span>
+    </div>
+  `).join("");
+}
+
+let toastTimer;
+function showToast(msg){
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> toast.classList.remove("show"), 3200);
+}
+
+loadDoctors();
+renderAppointments();
+</script>
+</body>
+</html>

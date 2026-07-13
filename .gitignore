@@ -1,0 +1,6 @@
+node_modules/
+.env
+.DS_Store
+npm-debug.log*
+# Ignore local SQLite database file; it will be created at runtime
+/data/*.db
